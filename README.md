@@ -5,7 +5,7 @@ LogicControl is a light-weight scripting language for specifying logic in extern
 
 Here is an example of a LogicControl script:
 
-```
+```glsl
 struct Input
 {
     vector3 Position : IN_Position;
@@ -30,9 +30,9 @@ Output ApplyWaterGravity(vector3 velocity : IN_Velocity)
 }
 ```
 
-Semantics such as `IN_Position` and `OUT_Velocity` are marked in the calling application.  Ideally, in the calling application you define a C# class like so:
+Semantics such as `IN_Position` and `OUT_Velocity` are marked in the calling application.  Ideally, in the calling application you define a C# interface like so:
 
-```
+```csharp
 public interface IGravityApplier
 {
     [Semantic("IN_Position")]
@@ -55,7 +55,7 @@ public interface IGravityApplier
 
 and you would operate it like so:
 
-```
+```csharp
 var script = LogicControl.LoadScript("script.lc");
 
 var gravityApplier1 = script.CreateInstance<IGravityApplier>();
