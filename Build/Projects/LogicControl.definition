@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Name="LogicControl" Path="LogicControl" Type="Console">
+  <References>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="GOLDEngine" />
+  </References>
+  <Files>
+    <Compile Include="LogicControl.cs" />
+    <None Include="Grammar.egt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </Files>
+</Project>

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ExternalProject Name="GOLDEngine">
+  <Binary Name="GOLD Engine" Path="GOLDEngine/GOLD Engine.dll" />
+</ExternalProject>

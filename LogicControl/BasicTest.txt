@@ -1,0 +1,15 @@
+struct Input
+{
+    vector3 Position : IN_Position;
+    vector3 Velocity : IN_Velocity;
+}
+
+struct Output
+{
+    vector3 Velocity : OUT_Velocity;
+}
+
+vector3 ApplyGravity(InputValues input) : OUT_Velocity
+{
+    return input.Velocity + vector3(0, 0.5, 0);
+}
