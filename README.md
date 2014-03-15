@@ -17,9 +17,16 @@ struct Output
     vector3 Velocity : OUT_Velocity;
 }
 
-vector3 ApplyGravity(InputValues input) : OUT_Velocity
+vector3 ApplyLandGravity(InputValues input) : OUT_Velocity
 {
     return input.Velocity + vector3(0, 0.5, 0);
+}
+
+Output ApplyWaterGravity(vector3 velocity : IN_Velocity)
+{
+    output = Output()
+    output.Velocity = velocity + vector3(0, 0.1, 0);
+    return output;
 }
 ```
 
@@ -40,7 +47,9 @@ public interface IGravityApplier
     [Semantic("OUT_Velocity")]
     Vector3? ResultVelocity { get; set; }
     
-    void ApplyGravity();
+    void ApplyLandGravity();
+    
+    void ApplyWaterGravity();
 }
 ```
 
@@ -49,12 +58,21 @@ and you would operate it like so:
 ```
 var script = LogicControl.LoadScript("script.lc");
 
-var gravityApplier = script.CreateInstance<IGravityApplier>();
+var gravityApplier1 = script.CreateInstance<IGravityApplier>();
 
-gravityApplier.Position = new Vector3(10, 10, 10);
-gravityApplier.Velocity = new Vector3(0, 0.5f, 0);
-gravityApplier.ApplyVelocity();
+gravityApplier1.Position = new Vector3(10, 10, 10);
+gravityApplier1.Velocity = new Vector3(0, 0.5f, 0);
+gravityApplier1.ApplyLandGravity();
 
-Console.WriteLine("Result position: " + gravityApplier.ResultPosition);
-Console.WriteLine("Velocity position: " + gravityApplier.ResultVelocity);
+Console.WriteLine("Result position: " + gravityApplier1.ResultPosition);
+Console.WriteLine("Velocity position: " + gravityApplier1.ResultVelocity);
+
+var gravityApplier2 = script.CreateInstance<IGravityApplier>();
+
+gravityApplier2.Position = new Vector3(10, 10, 10);
+gravityApplier2.Velocity = new Vector3(0, 0.5f, 0);
+gravityApplier2.ApplyWaterGravity();
+
+Console.WriteLine("Result position: " + gravityApplier2.ResultPosition);
+Console.WriteLine("Velocity position: " + gravityApplier2.ResultVelocity);
 ```
