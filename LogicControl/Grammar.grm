@@ -7,8 +7,8 @@
 "Start Symbol"   = <GlobalStatements>
 
 ! Define string ch 1 / 2 as set of printable character excluding quotes                 
-{String Ch 1} = {Printable} - ['']
-{String Ch 2} = {Printable} - ["]
+{String Ch 1} = {Printable} - [''] + [\]
+{String Ch 2} = {Printable} - ["] + [\]
 
 ! Allow underscores in identifiers
 {LetterAndUnderscore} = {Letter} + [_]
@@ -42,23 +42,22 @@ NumberLiteral = {Digit}+('.'{Digit}+)?
 
 <ArgumentDeclarations> ::= <ArgumentDeclaration> ',' <ArgumentDeclarations>
                          | <ArgumentDeclaration>
+                         |
 
-<ArgumentDeclaration> ::= <Type> Id
+<ArgumentDeclaration> ::= <Type> Id <OptionalSemantic>
 
 <Semantic> ::= ':' Id
 
 <OptionalSemantic> ::= <Semantic>
                     | 
 
-<Statements> ::= <TerminatedStatement> <Statements>
-               | <TerminatedStatement>
+<Statements> ::= <Statement> <Statements>
+               | <Statement>
               
-<TerminatedStatement> ::= <Statement> ';'
-               
 <Statement> ::= <WhileStatement>
               | <IfStatement>      
-              | <AssignStatement>
-              | <ReturnStatement>
+              | <AssignStatement> ';'
+              | <ReturnStatement> ';'
               | <BlockStatement>
 
 <WhileStatement> ::= while '(' <Expression> ')' <Statement>
@@ -66,26 +65,33 @@ NumberLiteral = {Digit}+('.'{Digit}+)?
 <IfStatement> ::= if '(' <Expression> ')' <Statement>
                 | if '(' <Expression> ')' <Statement> else <Statement>
 
-<AssignStatement> ::= Id '=' <Expression>
+<AssignTarget> ::= Id
+                 | <Lookup Exp> '.' Id
+
+<AssignStatement> ::= <AssignTarget> '=' <Expression>
+                    | <AssignTarget> '+=' <Expression>
+                    | <AssignTarget> '-=' <Expression>
+                    | <AssignTarget> '/=' <Expression>
+                    | <AssignTarget> '*=' <Expression>
 
 <ReturnStatement> ::= return <Expression>
 
 <BlockStatement> ::= '{' <Statements> '}'
 
 <Parameters> ::= <Expression> ',' <Parameters>
-               | <Expression>               
+               | <Expression>
+               |             
               
 <Expression>   ::= <Expression> '>'  <Add Exp> 
                  | <Expression> '<'  <Add Exp> 
                  | <Expression> '<=' <Add Exp> 
                  | <Expression> '>=' <Add Exp>
                  | <Expression> '==' <Add Exp>
-                 | <Expression> '<>' <Add Exp>
+                 | <Expression> '!=' <Add Exp>
                  | <Add Exp> 
 
 <Add Exp>      ::= <Add Exp> '+' <Mult Exp>
                  | <Add Exp> '-' <Mult Exp>
-                 | <Add Exp> '&' <Mult Exp>
                  | <Mult Exp> 
 
 <Mult Exp>    ::= <Mult Exp> '*' <Negate Exp> 
@@ -95,7 +101,7 @@ NumberLiteral = {Digit}+('.'{Digit}+)?
 <Negate Exp>  ::= '-' <Lookup Exp> 
                 | <Lookup Exp> 
 
-<Lookup Exp>  ::= <Value> '.' Id
+<Lookup Exp>  ::= <Lookup Exp> '.' Id
                 | <Value> 
 
 <Value>       ::= ID           
@@ -105,9 +111,9 @@ NumberLiteral = {Digit}+('.'{Digit}+)?
                 | <Type> '(' <Parameters> ')'
                 
 <Type>    ::= void
-            | number
             | string
-            | vector2
-            | vector3
-            | vector4
+            | float
+            | float2
+            | float3
+            | float4
             | Id

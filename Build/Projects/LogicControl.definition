@@ -4,12 +4,50 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
-    <Reference Include="GOLDEngine" />
   </References>
   <Files>
+    <Compile Include="AdditionLogicExpression.cs" />
+    <Compile Include="AssignLogicStatement.cs" />
+    <Compile Include="BlockLogicStatement.cs" />
+    <Compile Include="ComparisonLogicExpression.cs" />
+    <Compile Include="ConstantLogicExpression.cs" />
+    <Compile Include="FieldLogicAssignmentTarget.cs" />
+    <Compile Include="FunctionCallLogicExpression.cs" />
+    <Compile Include="GOLD\CharacterRange.cs" />
+    <Compile Include="GOLD\EGT.cs" />
+    <Compile Include="GOLD\FAEdge.cs" />
+    <Compile Include="GOLD\FAState.cs" />
+    <Compile Include="GOLD\Group.cs" />
+    <Compile Include="GOLD\LRState.cs" />
+    <Compile Include="GOLD\Parser.cs" />
+    <Compile Include="GOLD\Position.cs" />
+    <Compile Include="GOLD\Production.cs" />
+    <Compile Include="GOLD\Reduction.cs" />
+    <Compile Include="GOLD\Symbol.cs" />
+    <Compile Include="GOLD\Token.cs" />
+    <Compile Include="IdentifierLogicAssignmentTarget.cs" />
+    <Compile Include="IdentifierLogicExpression.cs" />
+    <Compile Include="IfElseLogicStatement.cs" />
+    <Compile Include="IfLogicStatement.cs" />
+    <Compile Include="LogicAssignmentTarget.cs" />
     <Compile Include="LogicControl.cs" />
-    <None Include="Grammar.egt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <Compile Include="LogicExecutionState.cs" />
+    <Compile Include="LogicExpression.cs" />
+    <Compile Include="LogicField.cs" />
+    <Compile Include="LogicFunction.cs" />
+    <Compile Include="LogicParameter.cs" />
+    <Compile Include="LogicParser.cs" />
+    <Compile Include="LogicScript.cs" />
+    <Compile Include="LogicStatement.cs" />
+    <Compile Include="LogicStructure.cs" />
+    <Compile Include="LogicUnmappedScriptInstance.cs" />
+    <Compile Include="LookupLogicExpression.cs" />
+    <Compile Include="MultiplyLogicExpression.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="ReturnLogicStatement.cs" />
+    <Compile Include="TruthfulLogicExpression.cs" />
+    <Compile Include="UnaryLogicExpression.cs" />
+    <Compile Include="WhileLogicStatement.cs" />
+    <EmbeddedResource Include="Grammar.egt" />
   </Files>
 </Project>
