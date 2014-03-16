@@ -1,241 +1,109 @@
-using System.Collections;
-
- // ERROR: Not supported in C#: OptionDeclaration
-using System.ComponentModel;
-
-public enum SymbolType
+namespace GOLD
 {
-	Nonterminal = 0,
-	//Nonterminal 
-	Content = 1,
-	//Passed to the parser
-	Noise = 2,
-	//Ignored by the parser
-	End = 3,
-	//End character (EOF)
-	GroupStart = 4,
-	//Group start  
-	GroupEnd = 5,
-	//Group end   
-	//Note: There is no value 6. CommentLine was deprecated.
-	Error = 7
-	//Error symbol
-}
+    using System.ComponentModel;
+    using GOLD.Internal;
 
-public class Symbol
-{
-	//================================================================================
-	// Class Name:
-	//      Symbol
-	//
-	// Purpose:
-	//       This class is used to store of the nonterminals used by the Deterministic
-	//       Finite Automata (DFA) and LALR Parser. Symbols can be either
-	//       terminals (which represent a class of tokens - such as identifiers) or
-	//       nonterminals (which represent the rules and structures of the grammar).
-	//       Terminal symbols fall into several catagories for use by the GOLD Parser
-	//       Engine which are enumerated below.
-	//
-	// Author(s):
-	//      Devin Cook
-	//
-	// Dependacies:
-	//      (None)
-	//
-	//================================================================================
+    public class Symbol
+    {
+        private readonly string m_Name;
 
-	private string m_Name;
-	private SymbolType m_Type;
+        private readonly short m_TableIndex;
 
-	private short m_TableIndex;
+        private SymbolType m_Type;
 
-	internal Group Group;
-	internal Symbol()
-	{
-		//Nothing
-	}
+        internal Symbol()
+        {
+            // Nothing
+        }
 
-	internal Symbol(string Name, SymbolType Type, short TableIndex)
-	{
-		m_Name = Name;
-		m_Type = Type;
-		m_TableIndex = TableIndex;
-	}
+        internal Symbol(string name, SymbolType type, short tableIndex)
+        {
+            this.m_Name = name;
+            this.m_Type = type;
+            this.m_TableIndex = tableIndex;
+        }
 
-	[Description("Returns the type of the symbol.")]
-	public SymbolType Type {
-		get { return m_Type; }
-		internal set { m_Type = value; }
-	}
+        [Description("Returns the type of the symbol.")]
+        public SymbolType Type
+        {
+            get
+            {
+                return this.m_Type;
+            }
 
-	[Description("Returns the index of the symbol in the Symbol Table,")]
-	public short TableIndex()
-	{
-		return m_TableIndex;
-	}
+            internal set
+            {
+                this.m_Type = value;
+            }
+        }
 
-	[Description("Returns the name of the symbol.")]
-	public string Name()
-	{
-		return m_Name;
-	}
+        internal Group Group { get; set; }
 
-	[Description("Returns the text representing the text in BNF format.")]
-	public string Text(bool AlwaysDelimitTerminals)
-	{
-		string Result = null;
+        [Description("Returns the name of the symbol.")]
+        public string Name()
+        {
+            return this.m_Name;
+        }
 
-		switch (m_Type) {
-			case SymbolType.Nonterminal:
-				Result = "<" + Name() + ">";
-				break;
-			case SymbolType.Content:
-				Result = LiteralFormat(Name(), AlwaysDelimitTerminals);
-				break;
-			default:
-				Result = "(" + Name() + ")";
-				break;
-		}
+        [Description("Returns the index of the symbol in the Symbol Table,")]
+        public short TableIndex()
+        {
+            return this.m_TableIndex;
+        }
 
-		return Result;
-	}
+        [Description("Returns the text representing the text in BNF format.")]
+        public string Text(bool alwaysDelimitTerminals)
+        {
+            string result;
 
-	[Description("Returns the text representing the text in BNF format.")]
-	public string Text()
-	{
-		return this.Text(false);
-	}
+            switch (this.m_Type)
+            {
+                case SymbolType.Nonterminal:
+                    result = "<" + this.Name() + ">";
+                    break;
+                case SymbolType.Content:
+                    result = this.LiteralFormat(this.Name(), alwaysDelimitTerminals);
+                    break;
+                default:
+                    result = "(" + this.Name() + ")";
+                    break;
+            }
 
-	private string LiteralFormat(string Source, bool ForceDelimit)
-	{
-		short n = 0;
-		char ch = '\0';
+            return result;
+        }
 
-		if (Source == "'") {
-			return "''";
-		} else {
-			n = 0;
-			while (n < Source.Length & (!ForceDelimit)) {
-				ch = Source[n];
-				ForceDelimit = !(char.IsLetter(ch) | ch == '.' | ch == '_' | ch == '-');
-				n += 1;
-			}
+        [Description("Returns the text representing the text in BNF format.")]
+        public string Text()
+        {
+            return this.Text(false);
+        }
 
-			if (ForceDelimit) {
-				return "'" + Source + "'";
-			} else {
-				return Source;
-			}
-		}
-	}
+        public override string ToString()
+        {
+            return this.Text();
+        }
 
-	public override string ToString()
-	{
-		return Text();
-	}
-}
+        private string LiteralFormat(string source, bool forceDelimit)
+        {
+            if (source == "'")
+            {
+                return "''";
+            }
 
-public class SymbolList
-{
-		//CANNOT inherit, must hide methods that edit the list
-	private ArrayList m_Array;
+            short n = 0;
+            while (n < source.Length & (!forceDelimit))
+            {
+                var ch = source[n];
+                forceDelimit = !(char.IsLetter(ch) | ch == '.' | ch == '_' | ch == '-');
+                n += 1;
+            }
 
-	internal SymbolList()
-	{
-		m_Array = new ArrayList();
-	}
+            if (forceDelimit)
+            {
+                return "'" + source + "'";
+            }
 
-	internal SymbolList(int Size)
-	{
-		m_Array = new ArrayList();
-		ReDimension(Size);
-	}
-
-	internal void ReDimension(int Size)
-	{
-		//Increase the size of the array to Size empty elements.
-		int n = 0;
-
-		m_Array.Clear();
-		for (n = 0; n <= Size - 1; n++) {
-			m_Array.Add(null);
-		}
-	}
-
-	[Description("Returns the symbol with the specified index.")]
-	public Symbol this[int Index] {
-		get {
-			if (Index >= 0 & Index < m_Array.Count) {
-				return (Symbol)this.m_Array[Index];
-			} else {
-				return null;
-			}
-		}
-
-		internal set { m_Array[Index] = value; }
-	}
-
-	[Description("Returns the total number of symbols in the list.")]
-	public int Count()
-	{
-		return m_Array.Count;
-	}
-
-	internal void Clear()
-	{
-		m_Array.Clear();
-	}
-
-	internal int Add(Symbol Item)
-	{
-		return m_Array.Add(Item);
-	}
-
-	internal Symbol GetFirstOfType(SymbolType Type)
-	{
-		bool Found = false;
-		short n = 0;
-		Symbol Sym = null;
-		Symbol Result = null;
-
-		Found = false;
-		n = 0;
-		while ((!Found) & n < m_Array.Count) {
-			Sym = (Symbol)this.m_Array[n];
-			if (Sym.Type == Type) {
-				Found = true;
-				Result = Sym;
-			}
-			n += 1;
-		}
-
-		return Result;
-	}
-
-	public override string ToString()
-	{
-		return Text();
-	}
-
-	[Description("Returns a list of the symbol names in BNF format.")]
-	public string Text(string Separator, bool AlwaysDelimitTerminals)
-	{
-		string Result = "";
-		int n = 0;
-		Symbol Sym = null;
-
-		for (n = 0; n <= m_Array.Count - 1; n++) {
-			Sym = (Symbol)this.m_Array[n];
-			Result += (n == 0 ? "" : Separator) + Sym.Text(AlwaysDelimitTerminals);
-		}
-
-		return Result;
-	}
-
-	[Description("Returns a list of the symbol names in BNF format.")]
-	public string Text()
-	{
-		return this.Text(", ", false);
-	}
-
+            return source;
+        }
+    }
 }

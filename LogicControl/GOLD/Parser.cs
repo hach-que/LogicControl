@@ -1,295 +1,88 @@
 namespace GOLD
 {
     using System;
-
-    // ERROR: Not supported in C#: OptionDeclaration
     using System.ComponentModel;
+    using System.Globalization;
     using System.IO;
-
-    public class ParserException : System.Exception
-    {
-
-
-        public string Method;
-
-        internal ParserException(string Message)
-            : base(Message)
-        {
-            this.Method = "";
-        }
-
-        internal ParserException(string Message, Exception Inner, string Method)
-            : base(Message, Inner)
-        {
-            this.Method = Method;
-        }
-    }
-
-    //===== Parsing messages 
-    public enum ParseMessage
-    {
-        TokenRead = 0,
-        //A new token is read
-        Reduction = 1,
-        //A production is reduced
-        Accept = 2,
-        //Grammar complete
-        NotLoadedError = 3,
-        //The tables are not loaded
-        LexicalError = 4,
-        //Token not recognized
-        SyntaxError = 5,
-        //Token is not expected
-        GroupError = 6,
-        //Reached the end of the file inside a block
-        InternalError = 7
-        //Something is wrong, very wrong
-    }
-
-
-    public class GrammarProperties
-    {
-
-        private const int PropertyCount = 8;
-
-        private enum PropertyIndex
-        {
-            Name = 0,
-
-            Version = 1,
-
-            Author = 2,
-
-            About = 3,
-
-            CharacterSet = 4,
-
-            CharacterMapping = 5,
-
-            GeneratedBy = 6,
-
-            GeneratedDate = 7
-        }
-
-
-        private string[] m_Property = new string[PropertyCount + 1];
-
-        internal GrammarProperties()
-        {
-            int n = 0;
-
-            for (n = 0; n <= PropertyCount - 1; n++)
-            {
-                m_Property[n] = "";
-            }
-        }
-
-        internal void SetValue(int Index, string Value)
-        {
-            if (Index >= 0 & Index < PropertyCount)
-            {
-                m_Property[Index] = Value;
-            }
-        }
-
-        public string Name
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.Name];
-            }
-        }
-
-        public string Version
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.Version];
-            }
-        }
-
-        public string Author
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.Author];
-            }
-        }
-
-        public string About
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.About];
-            }
-        }
-
-        public string CharacterSet
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.CharacterSet];
-            }
-        }
-
-        public string CharacterMapping
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.CharacterMapping];
-            }
-        }
-
-        public string GeneratedBy
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.GeneratedBy];
-            }
-        }
-
-        public string GeneratedDate
-        {
-            get
-            {
-                return m_Property[(int)PropertyIndex.GeneratedDate];
-            }
-        }
-    }
-
+    using GOLD.Internal;
 
     public class Parser
     {
-        //===================================================================
-        // Class Name:
-        //    Parser
-        //
-        // Purpose:
-        //    This is the main class in the GOLD Parser Engine and is used to perform
-        //    all duties required to the parsing of a source text string. This class
-        //    contains the LALR(1) State Machine code, the DFA State Machine code,
-        //    character table (used by the DFA algorithm) and all other structures and
-        //    methods needed to interact with the developer.
-        //
-        //Author(s):
-        //   Devin Cook
-        //
-        //Public Dependencies:
-        //   Token, TokenList, Production, ProductionList, Symbol, SymbolList, Reduction, Position
-        //
-        //Private Dependencies:
-        //   CGTReader, TokenStack, TokenStackQueue, FAStateList, CharacterRange, CharacterSet,
-        //   CharacterSetList, LRActionTableList
-        //
-        //Revision History:    
-        //  2011-10-06
-        //      * Added 5.0 logic.
-        //===================================================================
+        private const string KVersion = "5.0";
 
+        private readonly Position m_CurrentPosition = new Position();
 
-        private const string kVersion = "5.0";
+        // ===== Symbols recognized by the system
 
-        //===== Symbols recognized by the system
+        // ===== Used for Reductions & Errors
+        // This ENTIRE list will available to the user
+        private readonly SymbolList m_ExpectedSymbols = new SymbolList();
 
-        private SymbolList m_SymbolTable = new SymbolList();
+        private readonly TokenStack m_GroupStack = new TokenStack();
 
-        //===== DFA
-        private FAStateList m_DFA = new FAStateList();
+        // Tokens to be analyzed - Hybred object!
+        private readonly TokenQueueStack m_InputTokens = new TokenQueueStack();
+
+        private readonly TokenStack m_Stack = new TokenStack();
+
+        // === Line and column information. 
+        // Internal - so user cannot mess with values
+        private readonly Position m_SysPosition = new Position();
 
         private CharacterSetList m_CharSetTable = new CharacterSetList();
 
-        private string m_LookaheadBuffer;
-
-        //===== Productions
-
-        private ProductionList m_ProductionTable = new ProductionList();
-
-        //===== LALR
-        private LRStateList m_LRStates = new LRStateList();
-
         private int m_CurrentLALR;
 
-        private TokenStack m_Stack = new TokenStack();
+        private FAStateList m_DFA = new FAStateList();
 
-        //===== Used for Reductions & Errors
-        //This ENTIRE list will available to the user
-        private SymbolList m_ExpectedSymbols = new SymbolList();
+        // Last read terminal
+
+        // ===== Grammar Attributes
+        private GrammarProperties m_Grammar = new GrammarProperties();
+
+        // ===== Lexical Groups
+        private GroupList m_GroupTable = new GroupList();
 
         private bool m_HaveReduction;
 
-        //NEW 12/2001
-        private bool m_TrimReductions;
+        private LRStateList m_LRStates = new LRStateList();
 
-        //===== Private control variables
-        private bool m_TablesLoaded;
+        private string m_LookaheadBuffer;
 
-        //Tokens to be analyzed - Hybred object!
-        private TokenQueueStack m_InputTokens = new TokenQueueStack();
-
+        // ===== Productions
+        private ProductionList m_ProductionTable = new ProductionList();
 
         private TextReader m_Source;
 
-        //=== Line and column information. 
-        //Internal - so user cannot mess with values
-        private Position m_SysPosition = new Position();
+        private SymbolList m_SymbolTable = new SymbolList();
 
-        //Last read terminal
-        private Position m_CurrentPosition = new Position();
+        private bool m_TablesLoaded;
 
-
-        //===== The ParseLALR() function returns this value
-        private enum ParseResult
-        {
-            Accept = 1,
-
-            Shift = 2,
-
-            ReduceNormal = 3,
-
-            ReduceEliminated = 4,
-            //Trim
-            SyntaxError = 5,
-
-            InternalError = 6
-        }
-
-        //===== Grammar Attributes
-
-        private GrammarProperties m_Grammar = new GrammarProperties();
-
-        //===== Lexical Groups
-        private TokenStack m_GroupStack = new TokenStack();
-
-        private GroupList m_GroupTable = new GroupList();
+        private bool m_TrimReductions;
 
         public Parser()
         {
-            Restart();
-            m_TablesLoaded = false;
+            this.Restart();
+            this.m_TablesLoaded = false;
 
-            //======= Default Properties
-            m_TrimReductions = false;
+            // ======= Default Properties
+            this.m_TrimReductions = false;
         }
 
-        [Description("Opens a string for parsing.")]
-        public bool Open(ref string Text)
+        private enum ParseResult
         {
-            return Open(new StringReader(Text));
-        }
+            Accept = 1, 
 
-        [Description("Opens a text stream for parsing.")]
-        public bool Open(TextReader Reader)
-        {
-            Token Start = new Token();
+            Shift = 2, 
 
-            Restart();
-            m_Source = Reader;
+            ReduceNormal = 3, 
 
-            //=== Create stack top item. Only needs state
-            Start.State = m_LRStates.InitialState;
-            m_Stack.Push(ref Start);
+            ReduceEliminated = 4, 
 
-            return true;
+            // Trim
+            SyntaxError = 5, 
+
+            InternalError = 6
         }
 
         [Description("When the Parse() method returns a Reduce, this method will contain the current Reduction.")]
@@ -297,22 +90,14 @@ namespace GOLD
         {
             get
             {
-                object functionReturnValue = null;
-                if (m_HaveReduction)
-                {
-                    functionReturnValue = m_Stack.Top().Data;
-                }
-                else
-                {
-                    functionReturnValue = null;
-                }
-                return functionReturnValue;
+                return this.m_HaveReduction ? this.m_Stack.Top().Data : null;
             }
+
             set
             {
-                if (m_HaveReduction)
+                if (this.m_HaveReduction)
                 {
-                    m_Stack.Top().Data = value;
+                    this.m_Stack.Top().Data = value;
                 }
             }
         }
@@ -322,601 +107,597 @@ namespace GOLD
         {
             get
             {
-                return m_TrimReductions;
+                return this.m_TrimReductions;
             }
+
             set
             {
-                m_TrimReductions = value;
-            }
-        }
-
-        [Description("Returns information about the current grammar.")]
-        public GrammarProperties Grammar()
-        {
-            return m_Grammar;
-        }
-
-        [Description("Current line and column being read from the source.")]
-        public Position CurrentPosition()
-        {
-            return m_CurrentPosition;
-        }
-
-        [Description("If the Parse() function returns TokenRead, this method will return that last read token.")]
-        public Token CurrentToken()
-        {
-            return m_InputTokens.Top();
-        }
-
-        [Description("Removes the next token from the input queue.")]
-        public Token DiscardCurrentToken()
-        {
-            return m_InputTokens.Dequeue();
-        }
-
-        [Description("Added a token onto the end of the input queue.")]
-        public void EnqueueInput(ref Token TheToken)
-        {
-            m_InputTokens.Enqueue(ref TheToken);
-        }
-
-        [Description("Pushes the token onto the top of the input queue. This token will be analyzed next.")]
-        public void PushInput(ref Token TheToken)
-        {
-            m_InputTokens.Push(TheToken);
-        }
-
-        private string LookaheadBuffer(int Count)
-        {
-            //Return Count characters from the lookahead buffer. DO NOT CONSUME
-            //This is used to create the text stored in a token. It is disgarded
-            //separately. Because of the design of the DFA algorithm, count should
-            //never exceed the buffer length. The If-Statement below is fault-tolerate
-            //programming, but not necessary.
-
-            if (Count > m_LookaheadBuffer.Length)
-            {
-                Count = Convert.ToInt32(this.m_LookaheadBuffer);
-            }
-
-            return m_LookaheadBuffer.Substring(0, Count);
-        }
-
-        private string Lookahead(int CharIndex)
-        {
-            //Return single char at the index. This function will also increase 
-            //buffer if the specified character is not present. It is used 
-            //by the DFA algorithm.
-
-            int ReadCount = 0;
-            int n = 0;
-
-            //Check if we must read characters from the Stream
-            if (CharIndex > m_LookaheadBuffer.Length)
-            {
-                ReadCount = CharIndex - m_LookaheadBuffer.Length;
-                for (n = 1; n <= ReadCount; n++)
-                {
-                    m_LookaheadBuffer += (char)(m_Source.Read());
-                }
-            }
-
-            //If the buffer is still smaller than the index, we have reached
-            //the end of the text. In this case, return a null string - the DFA
-            //code will understand.
-            if (CharIndex <= m_LookaheadBuffer.Length)
-            {
-                return this.m_LookaheadBuffer[CharIndex - 1].ToString();
-            }
-            else
-            {
-                return "";
+                this.m_TrimReductions = value;
             }
         }
 
         [Description("Library name and version.")]
         public string About()
         {
-            return "GOLD Parser Engine; Version " + kVersion;
+            return "GOLD Parser Engine; Version " + KVersion;
         }
 
-        internal void Clear()
+        [Description("Current line and column being read from the source.")]
+        public Position CurrentPosition()
         {
-            m_SymbolTable.Clear();
-            m_ProductionTable.Clear();
-            m_CharSetTable.Clear();
-            m_DFA.Clear();
-            m_LRStates.Clear();
+            return this.m_CurrentPosition;
+        }
 
-            m_Stack.Clear();
-            m_InputTokens.Clear();
+        [Description("If the Parse() function returns TokenRead, this method will return that last read token.")]
+        public Token CurrentToken()
+        {
+            return this.m_InputTokens.Top();
+        }
 
-            m_Grammar = new GrammarProperties();
+        [Description("Removes the next token from the input queue.")]
+        public Token DiscardCurrentToken()
+        {
+            return this.m_InputTokens.Dequeue();
+        }
 
-            m_GroupStack.Clear();
-            m_GroupTable.Clear();
+        [Description("Added a token onto the end of the input queue.")]
+        public void EnqueueInput(ref Token theToken)
+        {
+            this.m_InputTokens.Enqueue(ref theToken);
+        }
 
-            Restart();
+        /// <summary>
+        /// If the Parse() method returns a SyntaxError, this method will contain a list of the symbols the grammar expected to see.
+        /// </summary>
+        public SymbolList ExpectedSymbols()
+        {
+            return this.m_ExpectedSymbols;
+        }
+
+        [Description("Returns information about the current grammar.")]
+        public GrammarProperties Grammar()
+        {
+            return this.m_Grammar;
         }
 
         [Description("Loads parse tables from the specified filename. Only EGT (version 5.0) is supported.")]
-        public bool LoadTables(string Path)
+        public bool LoadTables(string path)
         {
-            return LoadTables(new BinaryReader(File.Open(Path, FileMode.Open, FileAccess.Read)));
+            return this.LoadTables(new BinaryReader(File.Open(path, FileMode.Open, FileAccess.Read)));
         }
 
         [Description("Loads parse tables from the specified BinaryReader. Only EGT (version 5.0) is supported.")]
-        public bool LoadTables(BinaryReader Reader)
+        public bool LoadTables(BinaryReader reader)
         {
-            EGTReader EGT = new EGTReader();
-            bool Success = false;
-            EGTRecord RecType = default(EGTRecord);
+            var egt = new EGTReader();
+            bool success;
 
-            //try
-            //{
-                EGT.Open(Reader);
+            try
+            {
+                egt.Open(reader);
 
-                Restart();
-                Success = true;
-                while (!(EGT.EndOfFile() || Success == false))
+                this.Restart();
+                success = true;
+                while (!(egt.EndOfFile() || success == false))
                 {
-                    EGT.GetNextRecord();
+                    egt.GetNextRecord();
 
-                    RecType = (EGTRecord)EGT.RetrieveByte();
+                    var recType = (EGTRecord)egt.RetrieveByte();
 
-                    switch (RecType)
+                    switch (recType)
                     {
                         case EGTRecord.Property:
                         {
-                            //Index, Name, Value
-                            int Index = 0;
-                            string Name = null;
+                            // Index, Name, Value
+                            var index = egt.RetrieveInt16();
+                            egt.RetrieveString();
 
-                            Index = EGT.RetrieveInt16();
-                            Name = EGT.RetrieveString();
-                            //Just discard
-                            m_Grammar.SetValue(Index, EGT.RetrieveString());
+                            // Just discard
+                            this.m_Grammar.SetValue(index, egt.RetrieveString());
 
                             break;
                         }
+
                         case EGTRecord.TableCounts:
                         {
-                            //Symbol, CharacterSet, Rule, DFA, LALR
-                            m_SymbolTable = new SymbolList(EGT.RetrieveInt16());
-                            m_CharSetTable = new CharacterSetList(EGT.RetrieveInt16());
-                            m_ProductionTable = new ProductionList(EGT.RetrieveInt16());
-                            m_DFA = new FAStateList(EGT.RetrieveInt16());
-                            m_LRStates = new LRStateList(EGT.RetrieveInt16());
-                            m_GroupTable = new GroupList(EGT.RetrieveInt16());
+                            // Symbol, CharacterSet, Rule, DFA, LALR
+                            this.m_SymbolTable = new SymbolList(egt.RetrieveInt16());
+                            this.m_CharSetTable = new CharacterSetList(egt.RetrieveInt16());
+                            this.m_ProductionTable = new ProductionList(egt.RetrieveInt16());
+                            this.m_DFA = new FAStateList(egt.RetrieveInt16());
+                            this.m_LRStates = new LRStateList(egt.RetrieveInt16());
+                            this.m_GroupTable = new GroupList(egt.RetrieveInt16());
 
                             break;
                         }
+
                         case EGTRecord.InitialStates:
                         {
-                            //DFA, LALR
-                            m_DFA.InitialState = (short)EGT.RetrieveInt16();
-                            m_LRStates.InitialState = (short)EGT.RetrieveInt16();
+                            // DFA, LALR
+                            this.m_DFA.InitialState = (short)egt.RetrieveInt16();
+                            this.m_LRStates.InitialState = (short)egt.RetrieveInt16();
 
                             break;
                         }
+
                         case EGTRecord.Symbol:
                         {
-                            //#, Name, Kind
-                            short Index = 0;
-                            string Name = null;
-                            SymbolType Type = default(SymbolType);
+                            // #, Name, Kind
+                            var index = (short)egt.RetrieveInt16();
+                            var name = egt.RetrieveString();
+                            var type = (SymbolType)egt.RetrieveInt16();
 
-                            Index = (short)EGT.RetrieveInt16();
-                            Name = EGT.RetrieveString();
-                            Type = (SymbolType)EGT.RetrieveInt16();
-
-                            m_SymbolTable[Index] = new Symbol(Name, Type, Index);
+                            this.m_SymbolTable[index] = new Symbol(name, type, index);
 
                             break;
                         }
+
                         case EGTRecord.Group:
                         {
+                            // #, Name, Container#, Start#, End#, Tokenized, Open Ended, Reserved, Count, (Nested Group #...) 
+                            var g = new Group();
+                            int n;
 
-                            //#, Name, Container#, Start#, End#, Tokenized, Open Ended, Reserved, Count, (Nested Group #...) 
-                            Group G = new Group();
-                            int Index = 0;
-                            int Count = 0;
-                            int n = 0;
+                            var with1 = g;
+                            var index = egt.RetrieveInt16();
 
-                            var _with1 = G;
-                            Index = EGT.RetrieveInt16();
-                            //# 
+                            // # 
+                            with1.Name = egt.RetrieveString();
+                            with1.Container = this.SymbolTable()[egt.RetrieveInt16()];
+                            with1.Start = this.SymbolTable()[egt.RetrieveInt16()];
+                            with1.End = this.SymbolTable()[egt.RetrieveInt16()];
 
-                            _with1.Name = EGT.RetrieveString();
-                            _with1.Container = SymbolTable()[EGT.RetrieveInt16()];
-                            _with1.Start = SymbolTable()[EGT.RetrieveInt16()];
-                            _with1.End = SymbolTable()[EGT.RetrieveInt16()];
+                            with1.Advance = (Group.AdvanceMode)egt.RetrieveInt16();
+                            with1.Ending = (Group.EndingMode)egt.RetrieveInt16();
+                            egt.RetrieveEntry();
 
-                            _with1.Advance = (Group.AdvanceMode)EGT.RetrieveInt16();
-                            _with1.Ending = (Group.EndingMode)EGT.RetrieveInt16();
-                            EGT.RetrieveEntry();
-                            //Reserved
-
-                            Count = EGT.RetrieveInt16();
-                            for (n = 1; n <= Count; n++)
+                            // Reserved
+                            var count = egt.RetrieveInt16();
+                            for (n = 1; n <= count; n++)
                             {
-                                _with1.Nesting.Add(EGT.RetrieveInt16());
+                                with1.Nesting.Add(egt.RetrieveInt16());
                             }
 
+                            // === Link back
+                            g.Container.Group = g;
+                            g.Start.Group = g;
+                            g.End.Group = g;
 
-                            //=== Link back
-                            G.Container.Group = G;
-                            G.Start.Group = G;
-                            G.End.Group = G;
-
-                            m_GroupTable[Index] = G;
+                            this.m_GroupTable[index] = g;
 
                             break;
                         }
+
                         case EGTRecord.CharRanges:
                         {
-                            //#, Total Sets, RESERVED, (Start#, End#  ...)
-                            int Index = 0;
-                            int Total = 0;
+                            // #, Total Sets, RESERVED, (Start#, End#  ...)
+                            var index = egt.RetrieveInt16();
+                            egt.RetrieveInt16();
 
-                            Index = EGT.RetrieveInt16();
-                            EGT.RetrieveInt16();
-                            //Codepage
-                            Total = EGT.RetrieveInt16();
-                            EGT.RetrieveEntry();
-                            //Reserved
+                            // Codepage
+                            egt.RetrieveInt16();
+                            egt.RetrieveEntry();
 
-                            m_CharSetTable[Index] = new CharacterSet();
-                            while (!(EGT.RecordComplete()))
+                            // Reserved
+                            this.m_CharSetTable[index] = new CharacterSet();
+                            while (!egt.RecordComplete())
                             {
-                                m_CharSetTable[Index].Add(
-                                    new CharacterRange((ushort)EGT.RetrieveInt16(), (ushort)EGT.RetrieveInt16()));
+                                this.m_CharSetTable[index].Add(
+                                    new CharacterRange((ushort)egt.RetrieveInt16(), (ushort)egt.RetrieveInt16()));
                             }
 
                             break;
                         }
+
                         case EGTRecord.Production:
                         {
-                            //#, ID#, Reserved, (Symbol#,  ...)
-                            int Index = 0;
-                            int HeadIndex = 0;
-                            int SymIndex = 0;
+                            // #, ID#, Reserved, (Symbol#,  ...)
+                            var index = egt.RetrieveInt16();
+                            var headIndex = egt.RetrieveInt16();
+                            egt.RetrieveEntry();
 
-                            Index = EGT.RetrieveInt16();
-                            HeadIndex = EGT.RetrieveInt16();
-                            EGT.RetrieveEntry();
-                            //Reserved
+                            // Reserved
+                            this.m_ProductionTable[index] = new Production(this.m_SymbolTable[headIndex], (short)index);
 
-                            m_ProductionTable[Index] = new Production(m_SymbolTable[HeadIndex], (short)Index);
-
-                            while (!(EGT.RecordComplete()))
+                            while (!egt.RecordComplete())
                             {
-                                SymIndex = EGT.RetrieveInt16();
-                                m_ProductionTable[Index].Handle().Add(m_SymbolTable[SymIndex]);
+                                var symIndex = egt.RetrieveInt16();
+                                this.m_ProductionTable[index].Handle().Add(this.m_SymbolTable[symIndex]);
                             }
 
                             break;
                         }
+
                         case EGTRecord.DFAState:
                         {
-                            //#, Accept?, Accept#, Reserved (CharSet#, Target#, Reserved)...
-                            int Index = 0;
-                            bool Accept = false;
-                            int AcceptIndex = 0;
-                            int SetIndex = 0;
-                            int Target = 0;
+                            // #, Accept?, Accept#, Reserved (CharSet#, Target#, Reserved)...
+                            var index = egt.RetrieveInt16();
+                            var accept = egt.RetrieveBoolean();
+                            var acceptIndex = egt.RetrieveInt16();
+                            egt.RetrieveEntry();
 
-                            Index = EGT.RetrieveInt16();
-                            Accept = EGT.RetrieveBoolean();
-                            AcceptIndex = EGT.RetrieveInt16();
-                            EGT.RetrieveEntry();
-                            //Reserved
-
-                            if (Accept)
+                            // Reserved
+                            if (accept)
                             {
-                                m_DFA[Index] = new FAState(m_SymbolTable[AcceptIndex]);
+                                this.m_DFA[index] = new FAState(this.m_SymbolTable[acceptIndex]);
                             }
                             else
                             {
-                                m_DFA[Index] = new FAState();
+                                this.m_DFA[index] = new FAState();
                             }
 
-                            //(Edge chars, Target#, Reserved)...
-                            while (!(EGT.RecordComplete()))
+                            // (Edge chars, Target#, Reserved)...
+                            while (!egt.RecordComplete())
                             {
-                                SetIndex = EGT.RetrieveInt16();
-                                //Char table index
-                                Target = EGT.RetrieveInt16();
-                                //Target
-                                EGT.RetrieveEntry();
-                                //Reserved
+                                var setIndex = egt.RetrieveInt16();
 
-                                m_DFA[Index].Edges.Add(new FAEdge(m_CharSetTable[SetIndex], Target));
+                                // Char table index
+                                var target = egt.RetrieveInt16();
+
+                                // Target
+                                egt.RetrieveEntry();
+
+                                // Reserved
+                                this.m_DFA[index].Edges.Add(new FAEdge(this.m_CharSetTable[setIndex], target));
                             }
 
                             break;
                         }
+
                         case EGTRecord.LRState:
                         {
-                            //#, Reserved (Symbol#, Action, Target#, Reserved)...
-                            int Index = 0;
-                            int SymIndex = 0;
-                            int Action = 0;
-                            int Target = 0;
+                            // #, Reserved (Symbol#, Action, Target#, Reserved)...
+                            var index = egt.RetrieveInt16();
+                            egt.RetrieveEntry();
 
-                            Index = EGT.RetrieveInt16();
-                            EGT.RetrieveEntry();
-                            //Reserved
+                            // Reserved
+                            this.m_LRStates[index] = new LRState();
 
-                            m_LRStates[Index] = new LRState();
-
-                            //(Symbol#, Action, Target#, Reserved)...
-                            while (!(EGT.RecordComplete()))
+                            // (Symbol#, Action, Target#, Reserved)...
+                            while (!egt.RecordComplete())
                             {
-                                SymIndex = EGT.RetrieveInt16();
-                                Action = EGT.RetrieveInt16();
-                                Target = EGT.RetrieveInt16();
-                                EGT.RetrieveEntry();
-                                //Reserved
+                                var symIndex = egt.RetrieveInt16();
+                                var action = egt.RetrieveInt16();
+                                var target = egt.RetrieveInt16();
+                                egt.RetrieveEntry();
 
-                                m_LRStates[Index].Add(
-                                    new LRAction(m_SymbolTable[SymIndex], (LRActionType)Action, (short)Target));
+                                // Reserved
+                                this.m_LRStates[index].Add(
+                                    new LRAction(this.m_SymbolTable[symIndex], (LRActionType)action, (short)target));
                             }
 
                             break;
                         }
+
                         default:
-                            //RecordIDComment
-                            Success = false;
+
+                            // RecordIDComment
                             throw new ParserException(
-                                "File Error. A record of type '" + (char)(RecType)
+                                "File Error. A record of type '" + (char)recType
                                 + "' was read. This is not a valid code.");
                     }
                 }
 
-                EGT.Close();
-
-            /*}
+                egt.Close();
+            }
             catch (Exception ex)
             {
                 throw new ParserException(ex.Message, ex, "LoadTables");
-            }*/
+            }
 
-            m_TablesLoaded = Success;
+            this.m_TablesLoaded = success;
 
-            return Success;
+            return success;
         }
 
-        [Description("Returns a list of Symbols recognized by the grammar.")]
-        public SymbolList SymbolTable()
+        [Description("Opens a string for parsing.")]
+        public bool Open(ref string text)
         {
-            return m_SymbolTable;
+            return this.Open(new StringReader(text));
+        }
+
+        [Description("Opens a text stream for parsing.")]
+        public bool Open(TextReader reader)
+        {
+            var start = new Token();
+
+            this.Restart();
+            this.m_Source = reader;
+
+            // === Create stack top item. Only needs state
+            start.State = this.m_LRStates.InitialState;
+            this.m_Stack.Push(ref start);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Performs a parse action on the input. This method is typically used in a loop until either grammar is accepted or an error occurs.
+        /// </summary>
+        public ParseMessage Parse()
+        {
+            var message = default(ParseMessage);
+
+            if (!this.m_TablesLoaded)
+            {
+                return ParseMessage.NotLoadedError;
+            }
+
+            // ===================================
+            // Loop until breakable event
+            // ===================================
+            var done = false;
+            while (!done)
+            {
+                Token read;
+                if (this.m_InputTokens.Count == 0)
+                {
+                    read = this.ProduceToken();
+                    this.m_InputTokens.Push(read);
+
+                    message = ParseMessage.TokenRead;
+                    done = true;
+                }
+                else
+                {
+                    read = this.m_InputTokens.Top();
+                    this.m_CurrentPosition.Copy(read.Position());
+
+                    // Update current position
+
+                    // Runaway group
+                    if (this.m_GroupStack.Count != 0)
+                    {
+                        message = ParseMessage.GroupError;
+                        done = true;
+                    }
+                    else if (read.Type() == SymbolType.Noise)
+                    {
+                        // Just discard. These were already reported to the user.
+                        this.m_InputTokens.Pop();
+                    }
+                    else if (read.Type() == SymbolType.Error)
+                    {
+                        message = ParseMessage.LexicalError;
+                        done = true;
+
+                        // Finally, we can parse the token.
+                    }
+                    else
+                    {
+                        var action = this.ParseLALR(ref read);
+
+                        // SAME PROCEDURE AS v1
+                        switch (action)
+                        {
+                            case ParseResult.Accept:
+                                message = ParseMessage.Accept;
+                                done = true;
+
+                                break;
+                            case ParseResult.InternalError:
+                                message = ParseMessage.InternalError;
+                                done = true;
+
+                                break;
+                            case ParseResult.ReduceNormal:
+                                message = ParseMessage.Reduction;
+                                done = true;
+
+                                break;
+                            case ParseResult.Shift:
+
+                                // ParseToken() shifted the token on the front of the Token-Queue. 
+                                // It now exists on the Token-Stack and must be eliminated from the queue.
+                                this.m_InputTokens.Dequeue();
+
+                                break;
+                            case ParseResult.SyntaxError:
+                                message = ParseMessage.SyntaxError;
+                                done = true;
+
+                                break;
+                        }
+                    }
+                }
+            }
+
+            return message;
         }
 
         [Description("Returns a list of Productions recognized by the grammar.")]
         public ProductionList ProductionTable()
         {
-            return m_ProductionTable;
+            return this.m_ProductionTable;
         }
 
-        [Description(
-            "If the Parse() method returns a SyntaxError, this method will contain a list of the symbols the grammar expected to see."
-            )]
-        public SymbolList ExpectedSymbols()
+        [Description("Pushes the token onto the top of the input queue. This token will be analyzed next.")]
+        public void PushInput(ref Token theToken)
         {
-            return m_ExpectedSymbols;
-        }
-
-        private ParseResult ParseLALR(ref Token NextToken)
-        {
-            //This function analyzes a token and either:
-            //  1. Makes a SINGLE reduction and pushes a complete Reduction object on the m_Stack
-            //  2. Accepts the token and shifts
-            //  3. Errors and places the expected symbol indexes in the Tokens list
-            //The Token is assumed to be valid and WILL be checked
-            //If an action is performed that requires controlt to be returned to the user, the function returns true.
-            //The Message parameter is then set to the type of action.
-
-            short Index = 0;
-            short n = 0;
-            LRAction ParseAction = default(LRAction);
-            Production Prod = default(Production);
-            Token Head = default(Token);
-            Reduction NewReduction = default(Reduction);
-            ParseResult Result = default(ParseResult);
-
-            ParseAction = m_LRStates[m_CurrentLALR][NextToken.Parent];
-
-            // Work - shift or reduce
-            if ((ParseAction != null))
-            {
-                m_HaveReduction = false;
-                //Will be set true if a reduction is made
-                //'Debug.WriteLine("Action: " & ParseAction.Text)
-
-                switch (ParseAction.Type)
-                {
-                    case LRActionType.Accept:
-                        m_HaveReduction = true;
-                        Result = ParseResult.Accept;
-
-                        break;
-                    case LRActionType.Shift:
-                        m_CurrentLALR = ParseAction.Value;
-                        NextToken.State = (short)this.m_CurrentLALR;
-                        m_Stack.Push(ref NextToken);
-                        Result = ParseResult.Shift;
-
-                        break;
-                    case LRActionType.Reduce:
-                        //Produce a reduction - remove as many tokens as members in the rule & push a nonterminal token
-                        Prod = this.m_ProductionTable[ParseAction.Value];
-
-                        //======== Create Reduction
-                        if (m_TrimReductions && Prod.ContainsOneNonTerminal())
-                        {
-                            //The current rule only consists of a single nonterminal and can be trimmed from the
-                            //parse tree. Usually we create a new Reduction, assign it to the Data property
-                            //of Head and push it on the m_Stack. However, in this case, the Data property of the
-                            //Head will be assigned the Data property of the reduced token (i.e. the only one
-                            //on the m_Stack).
-                            //In this case, to save code, the value popped of the m_Stack is changed into the head.
-
-                            Head = m_Stack.Pop();
-                            Head.Parent = Prod.Head();
-
-                            Result = ParseResult.ReduceEliminated;
-                            //Build a Reduction
-                        }
-                        else
-                        {
-                            m_HaveReduction = true;
-                            NewReduction = new Reduction(Prod.Handle().Count());
-
-                            var _with2 = NewReduction;
-                            _with2.Parent = Prod;
-                            for (n = (short)(Prod.Handle().Count() - 1); n >= 0; n += -1)
-                            {
-                                _with2[n] = m_Stack.Pop();
-                            }
-
-                            Head = new Token(Prod.Head(), NewReduction);
-                            Result = ParseResult.ReduceNormal;
-                        }
-
-                        //========== Goto
-                        Index = m_Stack.Top().State;
-
-                        //========= If n is -1 here, then we have an Internal Table Error!!!!
-                        n = m_LRStates[Index].IndexOf(Prod.Head());
-                        if (n != -1)
-                        {
-                            m_CurrentLALR = m_LRStates[Index][n].Value;
-
-                            Head.State = (short)this.m_CurrentLALR;
-                            m_Stack.Push(ref Head);
-                        }
-                        else
-                        {
-                            Result = ParseResult.InternalError;
-                        }
-                        break;
-                }
-
-            }
-            else
-            {
-                //=== Syntax Error! Fill Expected Tokens
-                m_ExpectedSymbols.Clear();
-                //.Count - 1
-                foreach (LRAction Action in m_LRStates[m_CurrentLALR])
-                {
-                    switch (Action.Symbol.Type)
-                    {
-                        case SymbolType.Content:
-                        case SymbolType.End:
-                        case SymbolType.GroupStart:
-                        case SymbolType.GroupEnd:
-                            m_ExpectedSymbols.Add(Action.Symbol);
-                            break;
-                    }
-                }
-                Result = ParseResult.SyntaxError;
-            }
-
-            return Result;
-            //Very important
+            this.m_InputTokens.Push(theToken);
         }
 
         [Description("Restarts the parser. Loaded tables are retained.")]
         public void Restart()
         {
-            m_CurrentLALR = m_LRStates.InitialState;
+            this.m_CurrentLALR = this.m_LRStates.InitialState;
 
-            //=== Lexer
-            m_SysPosition.Column = 0;
-            m_SysPosition.Line = 0;
-            m_CurrentPosition.Line = 0;
-            m_CurrentPosition.Column = 0;
+            // === Lexer
+            this.m_SysPosition.Column = 0;
+            this.m_SysPosition.Line = 0;
+            this.m_CurrentPosition.Line = 0;
+            this.m_CurrentPosition.Column = 0;
 
-            m_HaveReduction = false;
+            this.m_HaveReduction = false;
 
-            m_ExpectedSymbols.Clear();
-            m_InputTokens.Clear();
-            m_Stack.Clear();
-            m_LookaheadBuffer = "";
+            this.m_ExpectedSymbols.Clear();
+            this.m_InputTokens.Clear();
+            this.m_Stack.Clear();
+            this.m_LookaheadBuffer = string.Empty;
 
-            //==== V4
-            m_GroupStack.Clear();
+            // ==== V4
+            this.m_GroupStack.Clear();
+        }
+
+        [Description("Returns a list of Symbols recognized by the grammar.")]
+        public SymbolList SymbolTable()
+        {
+            return this.m_SymbolTable;
         }
 
         [Description("Returns true if parse tables were loaded.")]
         public bool TablesLoaded()
         {
-            return m_TablesLoaded;
+            return this.m_TablesLoaded;
+        }
+
+        internal void Clear()
+        {
+            this.m_SymbolTable.Clear();
+            this.m_ProductionTable.Clear();
+            this.m_CharSetTable.Clear();
+            this.m_DFA.Clear();
+            this.m_LRStates.Clear();
+
+            this.m_Stack.Clear();
+            this.m_InputTokens.Clear();
+
+            this.m_Grammar = new GrammarProperties();
+
+            this.m_GroupStack.Clear();
+            this.m_GroupTable.Clear();
+
+            this.Restart();
+        }
+
+        private void ConsumeBuffer(int charCount)
+        {
+            // Consume/Remove the characters from the front of the buffer. 
+            if (charCount > this.m_LookaheadBuffer.Length)
+            {
+                return;
+            }
+
+            // Count Carriage Returns and increment the internal column and line
+            // numbers. This is done for the Developer and is not necessary for the
+            // DFA algorithm.
+            int n;
+            for (n = 0; n <= charCount - 1; n++)
+            {
+                switch (this.m_LookaheadBuffer[n])
+                {
+                    case '\n':
+                        this.m_SysPosition.Line += 1;
+                        this.m_SysPosition.Column = 0;
+                        break;
+                    case '\r':
+                        break;
+
+                        // Ignore, LF is used to inc line to be UNIX friendly
+                    default:
+                        this.m_SysPosition.Column += 1;
+                        break;
+                }
+            }
+
+            this.m_LookaheadBuffer = this.m_LookaheadBuffer.Remove(0, charCount);
+        }
+
+        private string Lookahead(int charIndex)
+        {
+            // Return single char at the index. This function will also increase 
+            // buffer if the specified character is not present. It is used 
+            // by the DFA algorithm.
+
+            // Check if we must read characters from the Stream
+            if (charIndex > this.m_LookaheadBuffer.Length)
+            {
+                var readCount = charIndex - this.m_LookaheadBuffer.Length;
+                int n;
+                for (n = 1; n <= readCount; n++)
+                {
+                    this.m_LookaheadBuffer += (char)this.m_Source.Read();
+                }
+            }
+
+            // If the buffer is still smaller than the index, we have reached
+            // the end of the text. In this case, return a null string - the DFA
+            // code will understand.
+            return charIndex <= this.m_LookaheadBuffer.Length ? this.m_LookaheadBuffer[charIndex - 1].ToString(CultureInfo.InvariantCulture) : string.Empty;
+        }
+
+        private string LookaheadBuffer(int count)
+        {
+            // Return Count characters from the lookahead buffer. DO NOT CONSUME
+            // This is used to create the text stored in a token. It is disgarded
+            // separately. Because of the design of the DFA algorithm, count should
+            // never exceed the buffer length. The If-Statement below is fault-tolerate
+            // programming, but not necessary.
+            if (count > this.m_LookaheadBuffer.Length)
+            {
+                count = Convert.ToInt32(this.m_LookaheadBuffer);
+            }
+
+            return this.m_LookaheadBuffer.Substring(0, count);
         }
 
         private Token LookaheadDFA()
         {
-            //This function implements the DFA for th parser's lexer.
-            //It generates a token which is used by the LALR state
-            //machine.
+            // This function implements the DFA for th parser's lexer.
+            // It generates a token which is used by the LALR state
+            // machine.
+            var target = 0;
+            var result = new Token();
 
-            string Ch = null;
-            int n = 0;
-            int Target = 0;
-            int CurrentDFA = 0;
-            bool Found = false;
-            bool Done = false;
-            FAEdge Edge = default(FAEdge);
-            int CurrentPosition = 0;
-            int LastAcceptState = 0;
-            int LastAcceptPosition = 0;
-            Token Result = new Token();
+            // ===================================================
+            // Match DFA token
+            // ===================================================
+            var done = false;
+            int currentDFA = this.m_DFA.InitialState;
+            var currentPosition = 1;
 
-            //===================================================
-            //Match DFA token
-            //===================================================
+            // Next byte in the input Stream
+            var lastAcceptState = -1;
 
-            Done = false;
-            CurrentDFA = m_DFA.InitialState;
-            CurrentPosition = 1;
-            //Next byte in the input Stream
-            LastAcceptState = -1;
-            //We have not yet accepted a character string
-            LastAcceptPosition = -1;
+            // We have not yet accepted a character string
+            var lastAcceptPosition = -1;
 
-            Ch = Lookahead(1);
-            //NO MORE DATA
-            if (!(string.IsNullOrEmpty(Ch) | (int)(Ch[0]) == 65535))
+            var ch = this.Lookahead(1);
+
+            // NO MORE DATA
+            // ReSharper disable once PossibleNullReferenceException
+            if (!(string.IsNullOrEmpty(ch) | ch[0] == 65535))
             {
-                while (!(Done))
+                while (!done)
                 {
                     // This code searches all the branches of the current DFA state
                     // for the next character in the input Stream. If found the
                     // target state is returned.
+                    ch = this.Lookahead(currentPosition);
 
-                    Ch = Lookahead(CurrentPosition);
-                    //End reached, do not match
-                    if (string.IsNullOrEmpty(Ch))
+                    // End reached, do not match
+                    bool found;
+                    if (string.IsNullOrEmpty(ch))
                     {
-                        Found = false;
+                        found = false;
                     }
                     else
                     {
-                        n = 0;
-                        Found = false;
-                        while (n < m_DFA[CurrentDFA].Edges.Count & !Found)
+                        var n = 0;
+                        found = false;
+                        while (n < this.m_DFA[currentDFA].Edges.Count & !found)
                         {
-                            Edge = m_DFA[CurrentDFA].Edges[n];
+                            var edge = this.m_DFA[currentDFA].Edges[n];
 
-                            //==== Look for character in the Character Set Table
-                            if (Edge.Characters.Contains((int)Ch[0]))
+                            // ==== Look for character in the Character Set Table
+                            if (edge.Characters.Contains(ch[0]))
                             {
-                                Found = true;
-                                Target = Edge.Target;
-                                //.TableIndex
+                                found = true;
+                                target = edge.Target;
+
+                                // .TableIndex
                             }
+
                             n += 1;
                         }
                     }
@@ -925,316 +706,291 @@ namespace GOLD
                     // position advance. Otherwise it is time to exit the main loop and report the token found (if there was one). 
                     // If the LastAcceptState is -1, then we never found a match and the Error Token is created. Otherwise, a new 
                     // token is created using the Symbol in the Accept State and all the characters that comprise it.
-
-                    if (Found)
+                    if (found)
                     {
                         // This code checks whether the target state accepts a token.
                         // If so, it sets the appropiate variables so when the
                         // algorithm in done, it can return the proper token and
                         // number of characters.
 
-                        //NOT is very important!
-                        if ((m_DFA[Target].Accept != null))
+                        // NOT is very important!
+                        if (this.m_DFA[target].Accept != null)
                         {
-                            LastAcceptState = Target;
-                            LastAcceptPosition = CurrentPosition;
+                            lastAcceptState = target;
+                            lastAcceptPosition = currentPosition;
                         }
 
-                        CurrentDFA = Target;
-                        CurrentPosition += 1;
+                        currentDFA = target;
+                        currentPosition += 1;
 
-                        //No edge found
+                        // No edge found
                     }
                     else
                     {
-                        Done = true;
+                        done = true;
+
                         // Lexer cannot recognize symbol
-                        if (LastAcceptState == -1)
+                        if (lastAcceptState == -1)
                         {
-                            Result.Parent = m_SymbolTable.GetFirstOfType(SymbolType.Error);
-                            Result.Data = LookaheadBuffer(1);
+                            result.Parent = this.m_SymbolTable.GetFirstOfType(SymbolType.Error);
+                            result.Data = this.LookaheadBuffer(1);
+
                             // Create Token, read characters
                         }
                         else
                         {
-                            Result.Parent = m_DFA[LastAcceptState].Accept;
-                            Result.Data = LookaheadBuffer(LastAcceptPosition);
-                            //Data contains the total number of accept characters
+                            result.Parent = this.m_DFA[lastAcceptState].Accept;
+                            result.Data = this.LookaheadBuffer(lastAcceptPosition);
+
+                            // Data contains the total number of accept characters
                         }
                     }
-                    //DoEvents
-                }
 
+                    // DoEvents
+                }
             }
             else
             {
                 // End of file reached, create End Token
-                Result.Data = "";
-                Result.Parent = m_SymbolTable.GetFirstOfType(SymbolType.End);
+                result.Data = string.Empty;
+                result.Parent = this.m_SymbolTable.GetFirstOfType(SymbolType.End);
             }
 
-            //===================================================
-            //Set the new token's position information
-            //===================================================
-            //Notice, this is a copy, not a linking of an instance. We don't want the user 
-            //to be able to alter the main value indirectly.
-            Result.Position().Copy(m_SysPosition);
+            // ===================================================
+            // Set the new token's position information
+            // ===================================================
+            // Notice, this is a copy, not a linking of an instance. We don't want the user 
+            // to be able to alter the main value indirectly.
+            result.Position().Copy(this.m_SysPosition);
 
-            return Result;
+            return result;
         }
 
-        private void ConsumeBuffer(int CharCount)
+        private ParseResult ParseLALR(ref Token nextToken)
         {
-            //Consume/Remove the characters from the front of the buffer. 
+            // This function analyzes a token and either:
+            // 1. Makes a SINGLE reduction and pushes a complete Reduction object on the m_Stack
+            // 2. Accepts the token and shifts
+            // 3. Errors and places the expected symbol indexes in the Tokens list
+            // The Token is assumed to be valid and WILL be checked
+            // If an action is performed that requires controlt to be returned to the user, the function returns true.
+            // The Message parameter is then set to the type of action.
+            var result = default(ParseResult);
+            var parseAction = this.m_LRStates[this.m_CurrentLALR][nextToken.Parent];
 
-            int n = 0;
-
-            if (CharCount <= m_LookaheadBuffer.Length)
+            // Work - shift or reduce
+            if (parseAction != null)
             {
-                // Count Carriage Returns and increment the internal column and line
-                // numbers. This is done for the Developer and is not necessary for the
-                // DFA algorithm.
-                for (n = 0; n <= CharCount - 1; n++)
+                this.m_HaveReduction = false;
+
+                // Will be set true if a reduction is made
+                // 'Debug.WriteLine("Action: " & ParseAction.Text)
+                switch (parseAction.Type)
                 {
-                    switch (m_LookaheadBuffer[n])
+                    case LRActionType.Accept:
+                        this.m_HaveReduction = true;
+                        result = ParseResult.Accept;
+
+                        break;
+                    case LRActionType.Shift:
+                        this.m_CurrentLALR = parseAction.Value;
+                        nextToken.State = (short)this.m_CurrentLALR;
+                        this.m_Stack.Push(ref nextToken);
+                        result = ParseResult.Shift;
+
+                        break;
+                    case LRActionType.Reduce:
+
+                        // Produce a reduction - remove as many tokens as members in the rule & push a nonterminal token
+                        var prod = this.m_ProductionTable[parseAction.Value];
+
+                        // ======== Create Reduction
+                        Token head;
+                        short n;
+                        if (this.m_TrimReductions && prod.ContainsOneNonTerminal())
+                        {
+                            // The current rule only consists of a single nonterminal and can be trimmed from the
+                            // parse tree. Usually we create a new Reduction, assign it to the Data property
+                            // of Head and push it on the m_Stack. However, in this case, the Data property of the
+                            // Head will be assigned the Data property of the reduced token (i.e. the only one
+                            // on the m_Stack).
+                            // In this case, to save code, the value popped of the m_Stack is changed into the head.
+                            head = this.m_Stack.Pop();
+                            head.Parent = prod.Head();
+
+                            result = ParseResult.ReduceEliminated;
+
+                            // Build a Reduction
+                        }
+                        else
+                        {
+                            this.m_HaveReduction = true;
+                            var newReduction = new Reduction(prod.Handle().Count());
+
+                            var with2 = newReduction;
+                            with2.Parent = prod;
+                            for (n = (short)(prod.Handle().Count() - 1); n >= 0; n += -1)
+                            {
+                                with2[n] = this.m_Stack.Pop();
+                            }
+
+                            head = new Token(prod.Head(), newReduction);
+                            result = ParseResult.ReduceNormal;
+                        }
+
+                        // ========== Goto
+                        var index = this.m_Stack.Top().State;
+
+                        // ========= If n is -1 here, then we have an Internal Table Error!!!!
+                        n = this.m_LRStates[index].IndexOf(prod.Head());
+                        if (n != -1)
+                        {
+                            this.m_CurrentLALR = this.m_LRStates[index][n].Value;
+
+                            head.State = (short)this.m_CurrentLALR;
+                            this.m_Stack.Push(ref head);
+                        }
+                        else
+                        {
+                            result = ParseResult.InternalError;
+                        }
+
+                        break;
+                }
+            }
+            else
+            {
+                // === Syntax Error! Fill Expected Tokens
+                this.m_ExpectedSymbols.Clear();
+
+                // .Count - 1
+                foreach (LRAction action in this.m_LRStates[this.m_CurrentLALR])
+                {
+                    switch (action.Symbol.Type)
                     {
-                        case '\n':
-                            m_SysPosition.Line += 1;
-                            m_SysPosition.Column = 0;
-                            break;
-                        case '\r':
-                            break;
-                            //Ignore, LF is used to inc line to be UNIX friendly
-                        default:
-                            m_SysPosition.Column += 1;
+                        case SymbolType.Content:
+                        case SymbolType.End:
+                        case SymbolType.GroupStart:
+                        case SymbolType.GroupEnd:
+                            this.m_ExpectedSymbols.Add(action.Symbol);
                             break;
                     }
                 }
 
-                m_LookaheadBuffer = m_LookaheadBuffer.Remove(0, CharCount);
+                result = ParseResult.SyntaxError;
             }
+
+            return result;
+
+            // Very important
         }
 
         private Token ProduceToken()
         {
             // ** VERSION 5.0 **
-            //This function creates a token and also takes into account the current
-            //lexing mode of the parser. In particular, it contains the group logic. 
-            //
-            //A stack is used to track the current "group". This replaces the comment
-            //level counter. Also, text is appended to the token on the top of the 
-            //stack. This allows the group text to returned in one chunk.
+            // This function creates a token and also takes into account the current
+            // lexing mode of the parser. In particular, it contains the group logic. 
+            // A stack is used to track the current "group". This replaces the comment
+            // level counter. Also, text is appended to the token on the top of the 
+            // stack. This allows the group text to returned in one chunk.
+            var done = false;
+            Token result = null;
 
-            Token Read = default(Token);
-            Token Pop = default(Token);
-            Token Top = default(Token);
-            Token Result = default(Token);
-            bool Done = false;
-            bool NestGroup = false;
-
-            Done = false;
-            Result = null;
-            Read = null;
-
-            while (!Done)
+            while (!done)
             {
-                Read = LookaheadDFA();
+                var read = this.LookaheadDFA();
 
-                //The logic - to determine if a group should be nested - requires that the top of the stack 
-                //and the symbol's linked group need to be looked at. Both of these can be unset. So, this section
-                //sets a Boolean and avoids errors. We will use this boolean in the logic chain below. 
-                if (Read.Type() == SymbolType.GroupStart)
+                // The logic - to determine if a group should be nested - requires that the top of the stack 
+                // and the symbol's linked group need to be looked at. Both of these can be unset. So, this section
+                // sets a Boolean and avoids errors. We will use this boolean in the logic chain below. 
+                bool nestGroup;
+                if (read.Type() == SymbolType.GroupStart)
                 {
-                    if (m_GroupStack.Count == 0)
-                    {
-                        NestGroup = true;
-                    }
-                    else
-                    {
-                        NestGroup = m_GroupStack.Top().Group().Nesting.Contains(Read.Group().TableIndex);
-                    }
+                    nestGroup = this.m_GroupStack.Count == 0
+                                || this.m_GroupStack.Top().Group().Nesting.Contains(read.Group().TableIndex);
                 }
                 else
                 {
-                    NestGroup = false;
+                    nestGroup = false;
                 }
 
-                //=================================
+                // =================================
                 // Logic chain
-                //=================================
-
-                if (NestGroup)
+                // =================================
+                if (nestGroup)
                 {
-                    ConsumeBuffer(((dynamic)Read.Data).Length);
-                    m_GroupStack.Push(ref Read);
-
+                    this.ConsumeBuffer(read.Data.Length);
+                    this.m_GroupStack.Push(ref read);
                 }
-                else if (m_GroupStack.Count == 0)
+                else if (this.m_GroupStack.Count == 0)
                 {
-                    //The token is ready to be analyzed.             
-                    ConsumeBuffer(((dynamic)Read.Data).Length);
-                    Result = Read;
-                    Done = true;
-
+                    // The token is ready to be analyzed.             
+                    this.ConsumeBuffer(read.Data.Length);
+                    result = read;
+                    done = true;
                 }
-                else if ((object.ReferenceEquals(m_GroupStack.Top().Group().End, Read.Parent)))
+                else if (ReferenceEquals(this.m_GroupStack.Top().Group().End, read.Parent))
                 {
-                    //End the current group
-                    Pop = m_GroupStack.Pop();
+                    // End the current group
+                    var pop = this.m_GroupStack.Pop();
 
-                    //=== Ending logic
-                    if (Pop.Group().Ending == Group.EndingMode.Closed)
+                    // === Ending logic
+                    if (pop.Group().Ending == Group.EndingMode.Closed)
                     {
-                        Pop.Data += Read.Data;
-                        //Append text
-                        ConsumeBuffer(Read.Data.Length);
-                        //Consume token
+                        pop.Data += read.Data;
+
+                        // Append text
+                        this.ConsumeBuffer(read.Data.Length);
+
+                        // Consume token
                     }
 
-                    //We are out of the group. Return pop'd token (which contains all the group text)
-                    if (m_GroupStack.Count == 0)
+                    // We are out of the group. Return pop'd token (which contains all the group text)
+                    if (this.m_GroupStack.Count == 0)
                     {
-                        Pop.Parent = Pop.Group().Container;
-                        //Change symbol to parent
-                        Result = Pop;
-                        Done = true;
+                        pop.Parent = pop.Group().Container;
+
+                        // Change symbol to parent
+                        result = pop;
+                        done = true;
                     }
                     else
                     {
-                        m_GroupStack.Top().Data += Pop.Data;
-                        //Append group text to parent
+                        this.m_GroupStack.Top().Data += pop.Data;
+
+                        // Append group text to parent
                     }
-
                 }
-                else if (Read.Type() == SymbolType.End)
+                else if (read.Type() == SymbolType.End)
                 {
-                    //EOF always stops the loop. The caller function (Parse) can flag a runaway group error.
-                    Result = Read;
-                    Done = true;
-
+                    // EOF always stops the loop. The caller function (Parse) can flag a runaway group error.
+                    result = read;
+                    done = true;
                 }
                 else
                 {
-                    //We are in a group, Append to the Token on the top of the stack.
-                    //Take into account the Token group mode  
-                    Top = m_GroupStack.Top();
+                    // We are in a group, Append to the Token on the top of the stack.
+                    // Take into account the Token group mode  
+                    var top = this.m_GroupStack.Top();
 
-                    if (Top.Group().Advance == Group.AdvanceMode.Token)
+                    if (top.Group().Advance == Group.AdvanceMode.Token)
                     {
-                        Top.Data += Read.Data;
+                        top.Data += read.Data;
+
                         // Append all text
-                        ConsumeBuffer(Read.Data.Length);
+                        this.ConsumeBuffer(read.Data.Length);
                     }
                     else
                     {
-                        Top.Data += Read.Data.Chars(0);
+                        top.Data += read.Data.Chars(0);
+
                         // Append one character
-                        ConsumeBuffer(1);
+                        this.ConsumeBuffer(1);
                     }
                 }
             }
 
-            return Result;
+            return result;
         }
-
-        [Description(
-            "Performs a parse action on the input. This method is typically used in a loop until either grammar is accepted or an error occurs."
-            )]
-        public ParseMessage Parse()
-        {
-            ParseMessage Message = default(ParseMessage);
-            bool Done = false;
-            Token Read = default(Token);
-            ParseResult Action = default(ParseResult);
-
-            if (!m_TablesLoaded)
-            {
-                return ParseMessage.NotLoadedError;
-            }
-
-            //===================================
-            //Loop until breakable event
-            //===================================
-            Done = false;
-            while (!Done)
-            {
-                if (m_InputTokens.Count == 0)
-                {
-                    Read = ProduceToken();
-                    m_InputTokens.Push(Read);
-
-                    Message = ParseMessage.TokenRead;
-                    Done = true;
-                }
-                else
-                {
-                    Read = m_InputTokens.Top();
-                    m_CurrentPosition.Copy(Read.Position());
-                    //Update current position
-
-                    //Runaway group
-                    if (m_GroupStack.Count != 0)
-                    {
-                        Message = ParseMessage.GroupError;
-                        Done = true;
-                    }
-                    else if (Read.Type() == SymbolType.Noise)
-                    {
-                        //Just discard. These were already reported to the user.
-                        m_InputTokens.Pop();
-
-                    }
-                    else if (Read.Type() == SymbolType.Error)
-                    {
-                        Message = ParseMessage.LexicalError;
-                        Done = true;
-
-                        //Finally, we can parse the token.
-                    }
-                    else
-                    {
-                        Action = ParseLALR(ref Read);
-                        //SAME PROCEDURE AS v1
-
-                        switch (Action)
-                        {
-                            case ParseResult.Accept:
-                                Message = ParseMessage.Accept;
-                                Done = true;
-
-                                break;
-                            case ParseResult.InternalError:
-                                Message = ParseMessage.InternalError;
-                                Done = true;
-
-                                break;
-                            case ParseResult.ReduceNormal:
-                                Message = ParseMessage.Reduction;
-                                Done = true;
-
-                                break;
-                            case ParseResult.Shift:
-                                //ParseToken() shifted the token on the front of the Token-Queue. 
-                                //It now exists on the Token-Stack and must be eliminated from the queue.
-                                m_InputTokens.Dequeue();
-
-                                break;
-                            case ParseResult.SyntaxError:
-                                Message = ParseMessage.SyntaxError;
-                                Done = true;
-
-                                break;
-                            default:
-                                break;
-                                //Do nothing.
-                        }
-                    }
-                }
-            }
-
-            return Message;
-        }
-
-
     }
 }

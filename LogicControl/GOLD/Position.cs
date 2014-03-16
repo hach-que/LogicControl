@@ -1,17 +1,21 @@
-public class Position
+namespace GOLD
 {
-	public int Line;
+    public class Position
+    {
+        internal Position()
+        {
+            this.Line = 0;
+            this.Column = 0;
+        }
 
-	public int Column;
-	internal Position()
-	{
-		this.Line = 0;
-		this.Column = 0;
-	}
+        public int Column { get; set; }
 
-	internal void Copy(Position Pos)
-	{
-		this.Column = Pos.Column;
-		this.Line = Pos.Line;
-	}
+        public int Line { get; set; }
+
+        internal void Copy(Position pos)
+        {
+            this.Column = pos.Column;
+            this.Line = pos.Line;
+        }
+    }
 }
